@@ -9,7 +9,7 @@ import time
 import urllib.request
 
 # ==========================================
-# 1. ADVANCED SYNTHESIZER ENGINE (Acoustic Harmonics)
+# 1. STUDIO ACOUSTIC PIANO SOUND ENGINE
 # ==========================================
 MODEL_PATH = "hand_landmarker.task"
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
@@ -26,58 +26,43 @@ options = vision.HandLandmarkerOptions(
 )
 detector = vision.HandLandmarker.create_from_options(options)
 
-# Piano Keys Definition (White & Black Keys)
 WHITE_KEYS = [
-    {"name": "C4", "freq": 261.63},
-    {"name": "D4", "freq": 293.66},
-    {"name": "E4", "freq": 329.63},
-    {"name": "F4", "freq": 349.23},
-    {"name": "G4", "freq": 392.00},
-    {"name": "A4", "freq": 440.00},
-    {"name": "B4", "freq": 493.88},
-    {"name": "C5", "freq": 523.25},
-    {"name": "D5", "freq": 587.33},
-    {"name": "E5", "freq": 659.25},
+    {"name": "C4", "file": "C4.mp3", "freq": 261.63},
+    {"name": "D4", "file": "D4.mp3", "freq": 293.66},
+    {"name": "E4", "file": "E4.mp3", "freq": 329.63},
+    {"name": "F4", "file": "F4.mp3", "freq": 349.23},
+    {"name": "G4", "file": "G4.mp3", "freq": 392.00},
+    {"name": "A4", "file": "A4.mp3", "freq": 440.00},
+    {"name": "B4", "file": "B4.mp3", "freq": 493.88},
+    {"name": "C5", "file": "C5.mp3", "freq": 523.25},
+    {"name": "D5", "file": "D5.mp3", "freq": 587.33},
+    {"name": "E5", "file": "E5.mp3", "freq": 659.25},
 ]
 
 BLACK_KEYS = [
-    {"name": "C#4", "freq": 277.18, "after_white": 0},
-    {"name": "D#4", "freq": 311.13, "after_white": 1},
-    {"name": "F#4", "freq": 369.99, "after_white": 3},
-    {"name": "G#4", "freq": 415.30, "after_white": 4},
-    {"name": "A#4", "freq": 466.16, "after_white": 5},
-    {"name": "C#5", "freq": 554.37, "after_white": 7},
-    {"name": "D#5", "freq": 622.25, "after_white": 8},
+    {"name": "C#4", "file": "Db4.mp3", "freq": 277.18, "after_white": 0},
+    {"name": "D#4", "file": "Eb4.mp3", "freq": 311.13, "after_white": 1},
+    {"name": "F#4", "file": "Gb4.mp3", "freq": 369.99, "after_white": 3},
+    {"name": "G#4", "file": "Ab4.mp3", "freq": 415.30, "after_white": 4},
+    {"name": "A#4", "file": "Bb4.mp3", "freq": 466.16, "after_white": 5},
+    {"name": "C#5", "file": "Db5.mp3", "freq": 554.37, "after_white": 7},
+    {"name": "D#5", "file": "Eb5.mp3", "freq": 622.25, "after_white": 8},
 ]
 
-def generate_piano_audio(freq, duration=0.45, sample_rate=22050):
-    """Generates audio sample array compatible with Gradio Audio output."""
-    t = np.linspace(0, duration, int(sample_rate * duration), False)
-    
-    fundamental = np.sin(2 * np.pi * freq * t)
-    h2 = 0.45 * np.sin(2 * np.pi * 2 * freq * t)
-    h3 = 0.25 * np.sin(2 * np.pi * 3 * freq * t)
-    h4 = 0.12 * np.sin(2 * np.pi * 4 * freq * t)
-    
-    raw_wave = fundamental + h2 + h3 + h4
-    envelope = np.exp(-3.5 * t)
-    
-    attack_samples = int(sample_rate * 0.006)
-    if attack_samples > 0:
-        envelope[:attack_samples] *= np.linspace(0, 1, attack_samples)
-        
-    signal = raw_wave * envelope
-    max_val = np.max(np.abs(signal))
-    if max_val > 0:
-        signal = (signal / max_val) * 0.8
-        
-    audio = (signal * 32767).astype(np.int16)
-    return sample_rate, audio
+SOUND_DIR = "sounds"
+os.makedirs(SOUND_DIR, exist_ok=True)
+BASE_SOUND_URL = "https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM/acoustic_grand_piano-mp3/"
 
-# Cache audio tones
-AUDIO_CACHE = {}
+SOUND_FILE_MAP = {}
 for k in WHITE_KEYS + BLACK_KEYS:
-    AUDIO_CACHE[k["name"]] = generate_piano_audio(k["freq"])
+    local_path = os.path.join(SOUND_DIR, k["file"])
+    if not os.path.exists(local_path):
+        try:
+            urllib.request.urlretrieve(BASE_SOUND_URL + k["file"], local_path)
+        except Exception:
+            pass
+    if os.path.exists(local_path):
+        SOUND_FILE_MAP[k["name"]] = local_path
 
 class WebTracker:
     def __init__(self):
@@ -132,7 +117,6 @@ def process_webcam_frame(frame):
                     w_idx = min(max(cx // white_width, 0), num_white - 1)
                     detected_key_name = WHITE_KEYS[w_idx]["name"]
 
-    # Handle debounced note trigger
     audio_output = None
     note_status = "Ready — Move index finger over piano keys!"
 
@@ -140,7 +124,7 @@ def process_webcam_frame(frame):
         note_status = f"Playing Note: 🎹 {detected_key_name}"
         if detected_key_name != tracker.active_key:
             tracker.active_key = detected_key_name
-            audio_output = AUDIO_CACHE[detected_key_name]
+            audio_output = SOUND_FILE_MAP.get(detected_key_name)
     else:
         tracker.active_key = None
 
@@ -207,7 +191,7 @@ def process_webcam_frame(frame):
     cv2.addWeighted(hud_bg, 0.75, frame, 0.25, 0, frame)
 
     cv2.putText(frame, "AIR PIANO PRO", (20, 32), cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 255, 255), 2)
-    cv2.putText(frame, "Created by Steven Thomas", (20, 52), cv2.FONT_HERSHEY_DUPLEX, 0.4, (180, 180, 180), 1)
+    cv2.putText(frame, "Studio Acoustic Piano — Steven Thomas", (20, 52), cv2.FONT_HERSHEY_DUPLEX, 0.4, (180, 180, 180), 1)
 
     return frame, audio_output, note_status
 
@@ -218,8 +202,8 @@ with gr.Blocks(title="Air Piano Pro by Steven Thomas", theme=gr.themes.Soft()) a
     gr.Markdown(
         """
         # 🎹 Air Piano Pro
-        ### Designed & Created by **Steven Thomas**
-        An advanced Virtual Air Piano featuring realistic 3D acoustic white & black keys, overtone harmonic synthesis, and computer vision hand tracking!
+        ### Created by **Steven Thomas**
+        High-fidelity Studio Acoustic Grand Piano with computer vision hand tracking!
         """
     )
     
