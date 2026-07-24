@@ -1,0 +1,5 @@
+gradio==4.28.3
+opencv-python-headless
+mediapipe
+numpy
+scipy
